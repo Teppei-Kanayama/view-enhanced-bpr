@@ -21,6 +21,11 @@ class TrainModel(gokart.TaskOnKart):
     def requires(self):
         return PreprocessData()
 
+    def output(self):
+        return self.make_model_target(relative_file_path='model/mf.zip',
+                                      save_function=torch.save,
+                                      load_function=torch.load)
+
     def run(self):
         data = self.load()['train']
         n_users = data['user_index'].max() + 1
@@ -40,10 +45,12 @@ class TrainModel(gokart.TaskOnKart):
 
         training_losses = []
         for iterations, (clicked, not_clicked, view, not_view) in enumerate(zip(clicked_data, not_click_data, view_data, not_view_data)):
+            # TODO: refactor
             predict1 = model(item=clicked['item_indices'], user=clicked['user_indices'])
             predict2 = model(item=not_view['item_indices'], user=not_view['user_indices'])
             predict3 = model(item=view['item_indices'], user=view['user_indices'])
 
+            # TODO: define loss function
             # loss = -LogSigmoid()(predict1 - predict2).mean()
             loss = (- LogSigmoid()(predict1 - predict2)
                     - self.alpha * LogSigmoid()(predict1 - predict3)
@@ -57,12 +64,30 @@ class TrainModel(gokart.TaskOnKart):
             if (iterations + 1) % 1000 == 0:
                 print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
 
+            if iterations > 3000000:
+                self.dump(model)
+                break
+
+
+class TestModel(gokart.TaskOnKart):
+    task_namespace = 'view_enhanced_bpr'
+
+    def requires(self):
+        return TrainModel()
+
+    def run(self):
+        model = self.load()
+        import pdb; pdb.set_trace()
+
 
 def validate(model, data):
     user_tensor = Variable(torch.FloatTensor(data['user_index'].values)).long()
     item_tensor = Variable(torch.FloatTensor(data['item_index'].values)).long()
     scores = model(item=item_tensor, user=user_tensor)
     data['model_score'] = scores.data.numpy()
+
+    # TODO: sepalate recall@k
+    # TODO: variable k
     data['rank'] = data.groupby('user')['model_score'].rank(ascending=False)
 
     gt_clicks = data.groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'gt_clicks'})
