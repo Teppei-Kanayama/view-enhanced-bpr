@@ -1,18 +1,13 @@
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn import LogSigmoid
-
-from logging import getLogger
-
 import gokart
 import luigi
 
 from view_enhanced_bpr.data.preprocess_data import PreprocessData
-
-logger = getLogger(__name__)
+from view_enhanced_bpr.model.matrix_factorization import MatrixFactorization
 
 
 class TrainModel(gokart.TaskOnKart):
@@ -29,10 +24,9 @@ class TrainModel(gokart.TaskOnKart):
 
         validation_data = data[
             (data['user_index'] > n_users * (1 - self.validation_ratio)) & (data['item_index'] > n_items * (1 - self.validation_ratio))]
-
         train_data = data.drop(validation_data.index)
 
-        model = MF(n_items, n_users, embedding_dim=10)
+        model = MatrixFactorization(n_items=n_items, n_users=n_users, embedding_dim=10)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0)
 
         clicked_data = model.data_sampler(train_data, key='click')
@@ -42,8 +36,8 @@ class TrainModel(gokart.TaskOnKart):
 
         training_losses = []
         for iterations, (clicked, not_clicked, view, not_view) in enumerate(zip(clicked_data, not_click_data, view_data, not_view_data)):
-            predict1 = model([clicked['item_indices'], clicked['user_indices']])
-            predict2 = model([not_view['item_indices'], not_view['user_indices']])
+            predict1 = model(item=clicked['item_indices'], user=clicked['user_indices'])
+            predict2 = model(item=not_view['item_indices'], user=not_view['user_indices'])
             loss = -LogSigmoid()(predict1 - predict2).mean()
             training_losses.append(float(loss.data))
             optimizer.zero_grad()
@@ -52,35 +46,6 @@ class TrainModel(gokart.TaskOnKart):
 
             if (iterations + 1) % 1000 == 0:
                 print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
-
-
-class MF(nn.Module):
-    def __init__(self, input_items, input_users, embedding_dim):
-        super(MF, self).__init__()
-        self.l_b1 = nn.Embedding(num_embeddings=input_items, embedding_dim=embedding_dim)
-        self.l_a1 = nn.Embedding(num_embeddings=input_users, embedding_dim=embedding_dim)
-        # self.l_l1 = nn.Linear(in_features=embedding_dim, out_features=1, bias=True)
-
-    def forward(self, inputs):
-        item_vec, user_vec = inputs
-        item_vec = self.l_b1(item_vec)
-        user_vec = self.l_a1(user_vec)
-        return (user_vec * item_vec).sum(axis=1)
-        # return F.relu(self.l_l1(user_vec * item_vec))
-
-    @staticmethod
-    def data_sampler(data, key, batch_size=2**11, iterations=1000000):
-        data = data[data[key]]
-        for i in range(0, iterations):
-            batch = data.sample(batch_size)
-            user_indices = batch['user_index'].values
-            item_indices = batch['item_index'].values
-            yield dict(
-                user_indices=Variable(torch.FloatTensor(user_indices)).long(),
-                item_indices=Variable(torch.FloatTensor(item_indices)).long()
-                )
-            # scores = batch['click'].values
-            # yield [user_indices, item_indices, scores]
 
 
 def validate(model, data):

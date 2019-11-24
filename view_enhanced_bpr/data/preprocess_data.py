@@ -1,14 +1,14 @@
 import pandas as pd
 import numpy as np
-
-from logging import getLogger
-
 import gokart
 from gokart.file_processor import CsvFileProcessor
 import luigi
 
 
-logger = getLogger(__name__)
+def _cross_join(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    df1['key'] = 0
+    df2['key'] = 0
+    return pd.merge(df1, df2, how='outer').drop('key', axis=1)
 
 
 class _ML100kDataProcessor(CsvFileProcessor):
@@ -50,15 +50,9 @@ class PreprocessData(gokart.TaskOnKart):
         data['click'] = data['rating'] >= self.click_threshold
         data['not_click'] = data['rating'] < self.click_threshold
         data['not_view'] = (0 < data['rating']) & (data['rating'] < self.click_threshold)
-        data['view'] = (data['rating'] == 0)
+        data['view'] = data['rating'] == 0
 
         test_data = data[(data['user_index'] < n_users * self.test_ratio) & (data['item_index'] < n_items * self.test_ratio)]
         train_data = data.drop(test_data.index)
 
         self.dump(dict(train=train_data, test=test_data))
-
-
-def _cross_join(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
-    df1['key'] = 0
-    df2['key'] = 0
-    return pd.merge(df1, df2, how='outer').drop('key', axis=1)
