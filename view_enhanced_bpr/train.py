@@ -14,6 +14,10 @@ class TrainModel(gokart.TaskOnKart):
     task_namespace = 'view_enhanced_bpr'
     validation_ratio = luigi.FloatParameter(default=0.1)  # type: float
 
+    embedding_dim = luigi.IntParameter(default=10)  # type: int
+    lr = luigi.FloatParameter(default=0.0001)  # type: float
+    weight_decay = luigi.FloatParameter(default=0.0)  # type: float
+
     def requires(self):
         return PreprocessData()
 
@@ -26,8 +30,8 @@ class TrainModel(gokart.TaskOnKart):
             (data['user_index'] > n_users * (1 - self.validation_ratio)) & (data['item_index'] > n_items * (1 - self.validation_ratio))]
         train_data = data.drop(validation_data.index)
 
-        model = MatrixFactorization(n_items=n_items, n_users=n_users, embedding_dim=10)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0)
+        model = MatrixFactorization(n_items=n_items, n_users=n_users, embedding_dim=self.embedding_dim)
+        optimizer = torch.optim.Adam(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
         clicked_data = model.data_sampler(train_data, key='click')
         not_click_data = model.data_sampler(train_data, key='not_click')
@@ -44,14 +48,14 @@ class TrainModel(gokart.TaskOnKart):
             loss.backward()
             optimizer.step()
 
-            if (iterations + 1) % 1000 == 0:
+            if (iterations + 1) % 10 == 0:
                 print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
 
 
 def validate(model, data):
     user_tensor = Variable(torch.FloatTensor(data['user_index'].values)).long()
     item_tensor = Variable(torch.FloatTensor(data['item_index'].values)).long()
-    scores = model([item_tensor, user_tensor])
+    scores = model(item=item_tensor, user=user_tensor)
     data['model_score'] = scores.data.numpy()
     data['rank'] = data.groupby('user')['model_score'].rank(ascending=False)
 
@@ -62,4 +66,3 @@ def validate(model, data):
     clicks = pd.merge(gt_clicks, model_clicks, on='user', how='left')
     clicks['recall'] = clicks['model_clicks'] / clicks['gt_clicks']
     return clicks['recall'].mean()
-
