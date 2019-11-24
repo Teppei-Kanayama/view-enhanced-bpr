@@ -31,7 +31,8 @@ class PreprocessData(gokart.TaskOnKart):
     task_namespace = 'view_enhanced_bpr'
 
     click_threshold = luigi.IntParameter(default=4)  # type: int
-    random_state = luigi.IntParameter(default=615)  # type: int
+    # random_state = luigi.IntParameter(default=615)  # type: int
+    test_ratio = luigi.FloatParameter(default=0.2)  # type: float
 
     def requires(self):
         return LoadML100kData()
@@ -44,16 +45,15 @@ class PreprocessData(gokart.TaskOnKart):
 
         user_df = pd.DataFrame(dict(user=data['user'].unique(), user_index=np.arange(n_users)))
         item_df = pd.DataFrame(dict(item=data['item'].unique(), item_index=np.arange(n_items)))
-        # df = _cross_join(user_df, item_df)
-        # data = pd.merge(df, data, on=['user', 'item'], how='left').fillna(0.)
-
-        data = pd.merge(data, user_df, on='user', how='left')
-        data = pd.merge(data, item_df, on='item', how='left')
+        df = _cross_join(user_df, item_df)
+        data = pd.merge(df, data, on=['user', 'item'], how='left').fillna(0.)
 
         data['click'] = (data['rating'] >= self.click_threshold).astype(int)
         data['view'] = (data['rating'] == 0).astype(int)
-        test_data = data.sample(frac=0.2, random_state=self.random_state)
+
+        test_data = data[(data['user_index'] < n_users * self.test_ratio) & (data['item_index'] < n_items * self.test_ratio)]
         train_data = data.drop(test_data.index)
+
         self.dump(dict(train=train_data, test=test_data))
 
 
