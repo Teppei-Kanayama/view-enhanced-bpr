@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 from datetime import datetime
+from torch.nn import LogSigmoid
 
 from logging import getLogger
 
@@ -39,21 +40,28 @@ class TrainModel(gokart.TaskOnKart):
         model = MF(n_items, n_users, embedding_dim=10)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0)
 
-        for iterations, (user_index, item_index, scores) in enumerate(model.data_sampler(train_data)):
-            user_tensor = Variable(torch.FloatTensor(user_index)).long()
-            item_tensor = Variable(torch.FloatTensor(item_index)).long()
-            scores = Variable(torch.FloatTensor(scores)).float()
+        training_losses = []
+        for iterations, (x, y) in enumerate(zip(model.clicked_data_sampler(train_data), model.unclicked_data_sampler(train_data))):
+            user_tensor_clicked = Variable(torch.FloatTensor(x[0])).long()
+            item_tensor_clicked = Variable(torch.FloatTensor(x[1])).long()
+            predict_clicked = model([item_tensor_clicked, user_tensor_clicked])
 
-            predict = model([item_tensor, user_tensor])
-            loss = nn.MSELoss()(predict, scores)
+            user_tensor_unclicked = Variable(torch.FloatTensor(y[0])).long()
+            item_tensor_unclicked = Variable(torch.FloatTensor(y[1])).long()
+            predict_unclicked = model([item_tensor_unclicked, user_tensor_unclicked])
+
+            # scores = Variable(torch.FloatTensor(scores)).float()
+            # loss = nn.MSELoss()(predict, scores)
+            # log_sigmoid = LogSigmoid()
+            loss = -LogSigmoid()(predict_clicked - predict_unclicked).mean()
+            training_losses.append(float(loss.data))
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             if iterations % 1000 == 0:
-                # print(iterations, datetime.now())
-                print(validate(model, validation_data))
+                print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
 
 
 class MF(nn.Module):
@@ -71,14 +79,24 @@ class MF(nn.Module):
         # return F.relu(self.l_l1(user_vec * item_vec))
 
     @staticmethod
-    def data_sampler(data, batch_size=2**11, iterations=1000000):
+    def clicked_data_sampler(data, batch_size=2**11, iterations=1000000):
         data = data[data['click'] > 0]
         for i in range(0, iterations):
             batch = data.sample(batch_size)
             user_indices = batch['user_index'].values
             item_indices = batch['item_index'].values
             scores = batch['click'].values
-            yield user_indices, item_indices, scores
+            yield [user_indices, item_indices, scores]
+
+    @staticmethod
+    def unclicked_data_sampler(data, batch_size=2**11, iterations=1000000):
+        data = data[data['click'] == 0]
+        for i in range(0, iterations):
+            batch = data.sample(batch_size)
+            user_indices = batch['user_index'].values
+            item_indices = batch['item_index'].values
+            scores = batch['click'].values
+            yield [user_indices, item_indices, scores]
 
 
 def validate(model, data):
@@ -91,7 +109,7 @@ def validate(model, data):
     gt_clicks = data.groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'gt_clicks'})
     gt_clicks = gt_clicks[gt_clicks['gt_clicks'] > 0]
 
-    model_clicks = data[data['rank'] <= 10].groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'model_clicks'})
+    model_clicks = data[data['rank'] <= 50].groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'model_clicks'})
     clicks = pd.merge(gt_clicks, model_clicks, on='user', how='left')
     clicks['recall'] = clicks['model_clicks'] / clicks['gt_clicks']
     return clicks['recall'].mean()
