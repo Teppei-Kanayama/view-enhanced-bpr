@@ -33,7 +33,7 @@ class TrainModel(gokart.TaskOnKart):
         train_data = data.drop(validation_data.index)
 
         model = MF(n_items, n_users, embedding_dim=10)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.1)
 
         for iterations, (user_index, item_index, scores) in enumerate(model.data_sampler(train_data)):
             user_tensor = Variable(torch.FloatTensor(user_index)).long()
@@ -57,13 +57,14 @@ class MF(nn.Module):
         super(MF, self).__init__()
         self.l_b1 = nn.Embedding(num_embeddings=input_items, embedding_dim=embedding_dim)
         self.l_a1 = nn.Embedding(num_embeddings=input_users, embedding_dim=embedding_dim)
-        self.l_l1 = nn.Linear(in_features=embedding_dim, out_features=1, bias=True)
+        # self.l_l1 = nn.Linear(in_features=embedding_dim, out_features=1, bias=True)
 
     def forward(self, inputs):
         item_vec, user_vec = inputs
         item_vec = self.l_b1(item_vec)
         user_vec = self.l_a1(user_vec)
         return (user_vec * item_vec).sum(axis=1)
+        # return F.relu(self.l_l1(user_vec * item_vec))
 
     @staticmethod
     def data_sampler(data, batch_size=2**11, iterations=1000000):
