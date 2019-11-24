@@ -1,15 +1,10 @@
 import statistics
-import pickle
-import json
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 from datetime import datetime
-
-import pandas as pd
-import numpy as np
 
 from logging import getLogger
 
@@ -24,37 +19,37 @@ logger = getLogger(__name__)
 class TrainModel(gokart.TaskOnKart):
     task_namespace = 'view_enhanced_bpr'
 
+    random_state = luigi.IntParameter(default=615)  # type: int
+
     def requires(self):
         return PreprocessData()
 
     def run(self):
         data = self.load()['train']
+        n_users = data['user_index'].max() + 1
+        n_items = data['item_index'].max() + 1
 
+        validation_data = data.sample(frac=0.01, random_state=self.random_state)
+        train_data = data.drop(validation_data.index)
 
-
-        import pdb; pdb.set_trace()
-
-        movie_index = json.load(open('./works/defs/smovie_index.json'))
-        user_index = json.load(open('./works/defs/user_index.json'))
-        print('user size', len(user_index), 'item size', len(movie_index))
-        model = MF(len(movie_index), len(user_index), embedding_dim=10)
+        model = MF(n_items, n_users, embedding_dim=10)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-        for index, (uindex, mindex, scores) in enumerate(generate()):
-            uindex_t = Variable(torch.FloatTensor(uindex)).long()
-            mindex_t = Variable(torch.FloatTensor(mindex)).long()
-            predict = model([mindex_t, uindex_t])
-
+        for iterations, (user_index, item_index, scores) in enumerate(model.data_sampler(train_data)):
+            user_tensor = Variable(torch.FloatTensor(user_index)).long()
+            item_tensor = Variable(torch.FloatTensor(item_index)).long()
             scores = Variable(torch.FloatTensor(scores)).float()
 
+            predict = model([item_tensor, user_tensor])
             loss = nn.MSELoss()(predict, scores)
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if index % 500 == 0:
-                print(index, datetime.now())
-                validate(model)
+            if iterations % 1000 == 0:
+                # print(iterations, datetime.now())
+                validate(model, validation_data)
 
 
 class MF(nn.Module):
@@ -68,30 +63,21 @@ class MF(nn.Module):
         item_vec, user_vec = inputs
         item_vec = self.l_b1(item_vec)
         user_vec = self.l_a1(user_vec)
-        return F.relu(self.l_l1(user_vec * item_vec))
+        return (user_vec * item_vec).sum(axis=1)
+
+    @staticmethod
+    def data_sampler(data, batch_size=2**11, iterations=1000000):
+        data = data[data['rating'] > 0]
+        for i in range(0, iterations):
+            batch = data.sample(batch_size)
+            user_indices = batch['user_index'].values
+            item_indices = batch['item_index'].values
+            scores = batch['rating'].values
+            yield user_indices, item_indices, scores
 
 
-def myLoss(output, target):
-    loss = torch.sqrt(torch.mean((output-target)**2))
-    return loss
-
-
-def generate():
-    train_triples = pickle.load(open('works/dataset/train_triples.pkl', 'rb'))
-    BATCH = 32
-    for i in range(0, len(train_triples), BATCH):
-        array = np.array(train_triples[i:i+BATCH])
-        uindex = array[:, 0]
-        mindex = array[:, 1]
-        scores = array[:, 2]
-        yield uindex, mindex, scores
-
-
-# test_triples = pickle.load(open('works/dataset/test_triples.pkl', 'rb'))
-
-
-def validate(model):
-    array = np.array(test_triples)
+def validate(model, data):
+    array = data[['user_index', 'item_index', 'rating']].values
     losses = []
     for i in range(0, array.shape[0], 100):
         uindex = array[i:i+100, 0]
@@ -102,7 +88,12 @@ def validate(model):
             Variable(torch.FloatTensor(uindex)).long(),
         ]
         scores = Variable(torch.FloatTensor(scores)).float()
-        loss = myLoss(scores, model(inputs))
+        loss = validation_loss(scores, model(inputs))
         losses.append(float(loss.data.numpy()))
         del inputs
     print('rmse', statistics.mean(losses))
+
+
+def validation_loss(output, target):
+    loss = torch.sqrt(torch.mean((output-target)**2))
+    return loss
