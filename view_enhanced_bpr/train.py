@@ -1,11 +1,8 @@
-import statistics
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-import torch.nn.functional as F
-from datetime import datetime
 from torch.nn import LogSigmoid
 
 from logging import getLogger
@@ -20,8 +17,6 @@ logger = getLogger(__name__)
 
 class TrainModel(gokart.TaskOnKart):
     task_namespace = 'view_enhanced_bpr'
-
-    # random_state = luigi.IntParameter(default=615)  # type: # int
     validation_ratio = luigi.FloatParameter(default=0.1)  # type: float
 
     def requires(self):
@@ -40,27 +35,22 @@ class TrainModel(gokart.TaskOnKart):
         model = MF(n_items, n_users, embedding_dim=10)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0)
 
+        clicked_data = model.data_sampler(train_data, key='click')
+        not_click_data = model.data_sampler(train_data, key='not_click')
+        view_data = model.data_sampler(train_data, key='view')
+        not_view_data = model.data_sampler(train_data, key='not_view')
+
         training_losses = []
-        for iterations, (x, y) in enumerate(zip(model.clicked_data_sampler(train_data), model.unclicked_data_sampler(train_data))):
-            user_tensor_clicked = Variable(torch.FloatTensor(x[0])).long()
-            item_tensor_clicked = Variable(torch.FloatTensor(x[1])).long()
-            predict_clicked = model([item_tensor_clicked, user_tensor_clicked])
-
-            user_tensor_unclicked = Variable(torch.FloatTensor(y[0])).long()
-            item_tensor_unclicked = Variable(torch.FloatTensor(y[1])).long()
-            predict_unclicked = model([item_tensor_unclicked, user_tensor_unclicked])
-
-            # scores = Variable(torch.FloatTensor(scores)).float()
-            # loss = nn.MSELoss()(predict, scores)
-            # log_sigmoid = LogSigmoid()
-            loss = -LogSigmoid()(predict_clicked - predict_unclicked).mean()
+        for iterations, (clicked, not_clicked, view, not_view) in enumerate(zip(clicked_data, not_click_data, view_data, not_view_data)):
+            predict1 = model([clicked['item_indices'], clicked['user_indices']])
+            predict2 = model([not_view['item_indices'], not_view['user_indices']])
+            loss = -LogSigmoid()(predict1 - predict2).mean()
             training_losses.append(float(loss.data))
-
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if iterations % 1000 == 0:
+            if (iterations + 1) % 1000 == 0:
                 print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
 
 
@@ -79,24 +69,18 @@ class MF(nn.Module):
         # return F.relu(self.l_l1(user_vec * item_vec))
 
     @staticmethod
-    def clicked_data_sampler(data, batch_size=2**11, iterations=1000000):
-        data = data[data['click'] > 0]
+    def data_sampler(data, key, batch_size=2**11, iterations=1000000):
+        data = data[data[key]]
         for i in range(0, iterations):
             batch = data.sample(batch_size)
             user_indices = batch['user_index'].values
             item_indices = batch['item_index'].values
-            scores = batch['click'].values
-            yield [user_indices, item_indices, scores]
-
-    @staticmethod
-    def unclicked_data_sampler(data, batch_size=2**11, iterations=1000000):
-        data = data[data['click'] == 0]
-        for i in range(0, iterations):
-            batch = data.sample(batch_size)
-            user_indices = batch['user_index'].values
-            item_indices = batch['item_index'].values
-            scores = batch['click'].values
-            yield [user_indices, item_indices, scores]
+            yield dict(
+                user_indices=Variable(torch.FloatTensor(user_indices)).long(),
+                item_indices=Variable(torch.FloatTensor(item_indices)).long()
+                )
+            # scores = batch['click'].values
+            # yield [user_indices, item_indices, scores]
 
 
 def validate(model, data):
