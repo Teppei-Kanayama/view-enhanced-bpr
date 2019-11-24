@@ -72,12 +72,12 @@ class MF(nn.Module):
 
     @staticmethod
     def data_sampler(data, batch_size=2**11, iterations=1000000):
-        data = data[data['rating'] > 0]
+        data = data[data['click'] > 0]
         for i in range(0, iterations):
             batch = data.sample(batch_size)
             user_indices = batch['user_index'].values
             item_indices = batch['item_index'].values
-            scores = batch['rating'].values
+            scores = batch['click'].values
             yield user_indices, item_indices, scores
 
 
@@ -94,28 +94,5 @@ def validate(model, data):
     model_clicks = data[data['rank'] <= 10].groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'model_clicks'})
     clicks = pd.merge(gt_clicks, model_clicks, on='user', how='left')
     clicks['recall'] = clicks['model_clicks'] / clicks['gt_clicks']
-
     return clicks['recall'].mean()
 
-
-# def validate(model, data):
-#     array = data[['user_index', 'item_index', 'rating']].values
-#     losses = []
-#     for i in range(0, array.shape[0], 100):
-#         uindex = array[i:i+100, 0]
-#         mindex = array[i:i+100, 1]
-#         scores = array[i:i+100, 2]
-#         inputs = [
-#             Variable(torch.FloatTensor(mindex)).long(),
-#             Variable(torch.FloatTensor(uindex)).long(),
-#         ]
-#         scores = Variable(torch.FloatTensor(scores)).float()
-#         loss = validation_loss(scores, model(inputs))
-#         losses.append(float(loss.data.numpy()))
-#         del inputs
-#     print('rmse', statistics.mean(losses))
-
-
-# def validation_loss(output, target):
-#     loss = torch.sqrt(torch.mean((output-target)**2))
-#     return loss

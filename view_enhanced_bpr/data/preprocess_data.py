@@ -47,6 +47,7 @@ class PreprocessData(gokart.TaskOnKart):
         item_df = pd.DataFrame(dict(item=data['item'].unique(), item_index=np.arange(n_items)))
         df = _cross_join(user_df, item_df)
         data = pd.merge(df, data, on=['user', 'item'], how='left').fillna(0.)
+        # data = pd.merge(df, data, on=['user', 'item'], how='left').dropna()
 
         data['click'] = (data['rating'] >= self.click_threshold).astype(int)
         data['view'] = (data['rating'] == 0).astype(int)
