@@ -46,8 +46,8 @@ class TrainModel(gokart.TaskOnKart):
 
             # loss = -LogSigmoid()(predict1 - predict2).mean()
             loss = (- LogSigmoid()(predict1 - predict2)
-                    - self.alpha * LogSigmoid()(predict1 - predict2)
-                    - (1 - self.alpha) * LogSigmoid()(predict1 - predict2)).mean()
+                    - self.alpha * LogSigmoid()(predict1 - predict3)
+                    - (1 - self.alpha) * LogSigmoid()(predict3 - predict2)).mean()
 
             training_losses.append(float(loss.data))
             optimizer.zero_grad()
