@@ -18,7 +18,7 @@ class TestModel(gokart.TaskOnKart):
         model = self.load('model')
         data = self.load('data')['test']
         recall = self._run(model, data)
-
+        print(recall)
         import pdb; pdb.set_trace()
 
     @staticmethod

@@ -52,7 +52,6 @@ class TrainModel(gokart.TaskOnKart):
             # predict4 = model(item=not_clicked['item_indices'], user=not_clicked['user_indices'])
 
             # TODO: define loss function
-
             # bpr
             # loss = -LogSigmoid()(predict1 - predict4).mean()
 
@@ -70,7 +69,7 @@ class TrainModel(gokart.TaskOnKart):
                 print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
 
             # view bprの場合は10
-            if iterations > 1000 * 1:
+            if iterations > 1000 * 10:
                 self.dump(model)
                 break
 
