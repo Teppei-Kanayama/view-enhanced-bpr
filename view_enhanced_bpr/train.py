@@ -15,7 +15,7 @@ class TrainModel(gokart.TaskOnKart):
     validation_ratio = luigi.FloatParameter(default=0.1)  # type: float
     embedding_dim = luigi.IntParameter(default=10)  # type: int
     lr = luigi.FloatParameter(default=0.0001)  # type: float
-    weight_decay = luigi.FloatParameter(default=0.0)  # type: float
+    weight_decay = luigi.FloatParameter(default=0.1)  # type: float
     alpha = luigi.FloatParameter(default=0.5)  # type: float
 
     def requires(self):
@@ -47,14 +47,19 @@ class TrainModel(gokart.TaskOnKart):
         for iterations, (clicked, not_clicked, view, not_view) in enumerate(zip(clicked_data, not_click_data, view_data, not_view_data)):
             # TODO: refactor
             predict1 = model(item=clicked['item_indices'], user=clicked['user_indices'])
-            predict2 = model(item=not_view['item_indices'], user=not_view['user_indices'])
-            predict3 = model(item=view['item_indices'], user=view['user_indices'])
+            # predict2 = model(item=not_view['item_indices'], user=not_view['user_indices'])
+            # predict3 = model(item=view['item_indices'], user=view['user_indices'])
+            predict4 = model(item=not_clicked['item_indices'], user=not_clicked['user_indices'])
 
             # TODO: define loss function
-            # loss = -LogSigmoid()(predict1 - predict2).mean()
-            loss = (- LogSigmoid()(predict1 - predict2)
-                    - self.alpha * LogSigmoid()(predict1 - predict3)
-                    - (1 - self.alpha) * LogSigmoid()(predict3 - predict2)).mean()
+
+            # bpr
+            loss = -LogSigmoid()(predict1 - predict4).mean()
+
+            # view bpr
+            # loss = (- LogSigmoid()(predict1 - predict2)
+            #         - self.alpha * LogSigmoid()(predict1 - predict3)
+            #         - (1 - self.alpha) * LogSigmoid()(predict3 - predict2)).mean()
 
             training_losses.append(float(loss.data))
             optimizer.zero_grad()
@@ -64,7 +69,8 @@ class TrainModel(gokart.TaskOnKart):
             if (iterations + 1) % 1000 == 0:
                 print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
 
-            if iterations > 3000000:
+            # view bprの場合は10
+            if iterations > 1000 * 50:
                 self.dump(model)
                 break
 
