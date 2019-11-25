@@ -47,19 +47,19 @@ class TrainModel(gokart.TaskOnKart):
         for iterations, (clicked, not_clicked, view, not_view) in enumerate(zip(clicked_data, not_click_data, view_data, not_view_data)):
             # TODO: refactor
             predict1 = model(item=clicked['item_indices'], user=clicked['user_indices'])
-            # predict2 = model(item=not_view['item_indices'], user=not_view['user_indices'])
-            # predict3 = model(item=view['item_indices'], user=view['user_indices'])
-            predict4 = model(item=not_clicked['item_indices'], user=not_clicked['user_indices'])
+            predict2 = model(item=not_view['item_indices'], user=not_view['user_indices'])
+            predict3 = model(item=view['item_indices'], user=view['user_indices'])
+            # predict4 = model(item=not_clicked['item_indices'], user=not_clicked['user_indices'])
 
             # TODO: define loss function
 
             # bpr
-            loss = -LogSigmoid()(predict1 - predict4).mean()
+            # loss = -LogSigmoid()(predict1 - predict4).mean()
 
             # view bpr
-            # loss = (- LogSigmoid()(predict1 - predict2)
-            #         - self.alpha * LogSigmoid()(predict1 - predict3)
-            #         - (1 - self.alpha) * LogSigmoid()(predict3 - predict2)).mean()
+            loss = (- LogSigmoid()(predict1 - predict2)
+                    - self.alpha * LogSigmoid()(predict1 - predict3)
+                    - (1 - self.alpha) * LogSigmoid()(predict3 - predict2)).mean()
 
             training_losses.append(float(loss.data))
             optimizer.zero_grad()
@@ -70,20 +70,9 @@ class TrainModel(gokart.TaskOnKart):
                 print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
 
             # view bprの場合は10
-            if iterations > 1000 * 50:
+            if iterations > 1000 * 1:
                 self.dump(model)
                 break
-
-
-class TestModel(gokart.TaskOnKart):
-    task_namespace = 'view_enhanced_bpr'
-
-    def requires(self):
-        return TrainModel()
-
-    def run(self):
-        model = self.load()
-        import pdb; pdb.set_trace()
 
 
 def validate(model, data):
