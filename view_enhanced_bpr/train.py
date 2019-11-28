@@ -2,12 +2,12 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.autograd import Variable
-from torch.nn import LogSigmoid
 import gokart
 import luigi
 
 from view_enhanced_bpr.data.preprocess_data import PreprocessData
 from view_enhanced_bpr.model.matrix_factorization import MatrixFactorization
+from view_enhanced_bpr.model.loss import bpr_loss, view_enhanced_bpr_loss
 
 
 class TrainModel(gokart.TaskOnKart):
@@ -17,6 +17,7 @@ class TrainModel(gokart.TaskOnKart):
     lr = luigi.FloatParameter(default=0.0001)  # type: float
     weight_decay = luigi.FloatParameter(default=0.1)  # type: float
     alpha = luigi.FloatParameter(default=0.5)  # type: float
+    loss_type = luigi.Parameter()  # type: str
 
     def requires(self):
         return PreprocessData()
@@ -38,6 +39,12 @@ class TrainModel(gokart.TaskOnKart):
         model = MatrixFactorization(n_items=n_items, n_users=n_users, embedding_dim=self.embedding_dim)
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
+        loss_functions = dict(
+            bpr=bpr_loss,
+            view_enhanced_bpr=view_enhanced_bpr_loss
+            )
+        loss_function = loss_functions[self.loss_type]
+
         clicked_data = model.data_sampler(train_data, key='click')
         not_click_data = model.data_sampler(train_data, key='not_click')
         view_data = model.data_sampler(train_data, key='view')
@@ -45,21 +52,14 @@ class TrainModel(gokart.TaskOnKart):
 
         training_losses = []
         for iterations, (clicked, not_clicked, view, not_view) in enumerate(zip(clicked_data, not_click_data, view_data, not_view_data)):
-            # TODO: refactor
-            predict1 = model(item=clicked['item_indices'], user=clicked['user_indices'])
-            predict2 = model(item=not_view['item_indices'], user=not_view['user_indices'])
-            predict3 = model(item=view['item_indices'], user=view['user_indices'])
-            # predict4 = model(item=not_clicked['item_indices'], user=not_clicked['user_indices'])
-
-            # TODO: define loss function
-            # bpr
-            # loss = -LogSigmoid()(predict1 - predict4).mean()
-
-            # view bpr
-            loss = (- LogSigmoid()(predict1 - predict2)
-                    - self.alpha * LogSigmoid()(predict1 - predict3)
-                    - (1 - self.alpha) * LogSigmoid()(predict3 - predict2)).mean()
-
+            if self.loss_type == 'bpr':
+                predict = [model(item=clicked['item_indices'], user=clicked['user_indices']),
+                           model(item=not_clicked['item_indices'], user=not_clicked['user_indices'])]
+            elif self.loss_type == 'view_enhanced_bpr':
+                predict = [model(item=clicked['item_indices'], user=clicked['user_indices']),
+                           model(item=view['item_indices'], user=view['user_indices']),
+                           model(item=not_view['item_indices'], user=not_view['user_indices'])]
+            loss = loss_function(predict)
             training_losses.append(float(loss.data))
             optimizer.zero_grad()
             loss.backward()
