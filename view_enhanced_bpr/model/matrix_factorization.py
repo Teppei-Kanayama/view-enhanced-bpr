@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import pandas as pd
 
 
 class MatrixFactorization(nn.Module):
@@ -15,13 +16,11 @@ class MatrixFactorization(nn.Module):
         return (user * item).sum(axis=1)
 
     @staticmethod
-    def data_sampler(data, key, batch_size=2**11, iterations=1000000):
-        data = data[data[key]]
+    def data_sampler(data, batch_size=2**11, iterations=1000000):
         for i in range(0, iterations):
             batch = data.sample(batch_size)
-            user_indices = batch['user_index'].values
-            item_indices = batch['item_index'].values
             yield dict(
-                user_indices=Variable(torch.FloatTensor(user_indices)).long(),
-                item_indices=Variable(torch.FloatTensor(item_indices)).long()
+                user_indices=Variable(torch.FloatTensor(batch['user_index'].values)).long(),
+                clicked_item_indices=Variable(torch.FloatTensor(batch['clicked_item_index'].values)).long(),
+                not_clicked_item_indices=Variable(torch.FloatTensor(batch['not_clicked_item_index'].values)).long()
                 )

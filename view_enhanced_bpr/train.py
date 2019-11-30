@@ -5,7 +5,7 @@ from torch.autograd import Variable
 import gokart
 import luigi
 
-from view_enhanced_bpr.data.preprocess_data import PreprocessData
+from view_enhanced_bpr.data.preprocess_data import PreprocessData, MakeTrainPair
 from view_enhanced_bpr.model.matrix_factorization import MatrixFactorization
 from view_enhanced_bpr.model.loss import bpr_loss, view_enhanced_bpr_loss
 
@@ -14,13 +14,13 @@ class TrainModel(gokart.TaskOnKart):
     task_namespace = 'view_enhanced_bpr'
     validation_ratio = luigi.FloatParameter(default=0.1)  # type: float
     embedding_dim = luigi.IntParameter(default=10)  # type: int
-    lr = luigi.FloatParameter(default=0.0001)  # type: float
-    weight_decay = luigi.FloatParameter(default=0.1)  # type: float
+    lr = luigi.FloatParameter(default=0.005)  # type: float
+    weight_decay = luigi.FloatParameter(default=0.0001)  # type: float
     alpha = luigi.FloatParameter(default=0.5)  # type: float
-    loss_type = luigi.Parameter()  # type: str
+    loss_type = luigi.Parameter(default='bpr')  # type: str
 
     def requires(self):
-        return PreprocessData()
+        return dict(data=PreprocessData(), train_data=MakeTrainPair())
 
     def output(self):
         return self.make_model_target(relative_file_path='model/mf.zip',
@@ -28,13 +28,12 @@ class TrainModel(gokart.TaskOnKart):
                                       load_function=torch.load)
 
     def run(self):
-        data = self.load()['train']
+        data = self.load('data')['train']
         n_users = data['user_index'].max() + 1
         n_items = data['item_index'].max() + 1
 
-        validation_data = data[
-            (data['user_index'] > n_users * (1 - self.validation_ratio)) & (data['item_index'] > n_items * (1 - self.validation_ratio))]
-        train_data = data.drop(validation_data.index)
+        train_pair_data = self.load('train_data')
+        validation_data = self.load('data')['validation']
 
         model = MatrixFactorization(n_items=n_items, n_users=n_users, embedding_dim=self.embedding_dim)
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -45,20 +44,17 @@ class TrainModel(gokart.TaskOnKart):
             )
         loss_function = loss_functions[self.loss_type]
 
-        clicked_data = model.data_sampler(train_data, key='click')
-        not_click_data = model.data_sampler(train_data, key='not_click')
-        view_data = model.data_sampler(train_data, key='view')
-        not_view_data = model.data_sampler(train_data, key='not_view')
+        data = model.data_sampler(train_pair_data)
 
         training_losses = []
-        for iterations, (clicked, not_clicked, view, not_view) in enumerate(zip(clicked_data, not_click_data, view_data, not_view_data)):
+        for iterations, d in enumerate(data):
             if self.loss_type == 'bpr':
-                predict = [model(item=clicked['item_indices'], user=clicked['user_indices']),
-                           model(item=not_clicked['item_indices'], user=not_clicked['user_indices'])]
-            elif self.loss_type == 'view_enhanced_bpr':
-                predict = [model(item=clicked['item_indices'], user=clicked['user_indices']),
-                           model(item=view['item_indices'], user=view['user_indices']),
-                           model(item=not_view['item_indices'], user=not_view['user_indices'])]
+                predict = [model(item=d['clicked_item_indices'], user=d['user_indices']),
+                           model(item=d['not_clicked_item_indices'], user=d['user_indices'])]
+            # elif self.loss_type == 'view_enhanced_bpr':
+            #     predict = [model(item=clicked['item_indices'], user=clicked['user_indices']),
+            #                model(item=view['item_indices'], user=view['user_indices']),
+            #                model(item=not_view['item_indices'], user=not_view['user_indices'])]
             loss = loss_function(predict)
             training_losses.append(float(loss.data))
             optimizer.zero_grad()

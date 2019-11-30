@@ -32,6 +32,7 @@ class PreprocessData(gokart.TaskOnKart):
 
     click_threshold = luigi.IntParameter(default=4)  # type: int
     test_ratio = luigi.FloatParameter(default=0.2)  # type: float
+    validation_ratio = luigi.FloatParameter(default=0.1)  # type: float
 
     def requires(self):
         return LoadML100kData()
@@ -48,11 +49,32 @@ class PreprocessData(gokart.TaskOnKart):
         data = pd.merge(df, data, on=['user', 'item'], how='left').fillna(0.)
 
         data['click'] = data['rating'] >= self.click_threshold
-        data['not_click'] = data['rating'] < self.click_threshold
-        data['not_view'] = (0 < data['rating']) & (data['rating'] < self.click_threshold)
         data['view'] = data['rating'] == 0
 
         test_data = data[(data['user_index'] < n_users * self.test_ratio) & (data['item_index'] < n_items * self.test_ratio)]
-        train_data = data.drop(test_data.index)
+        validation_data = data[(data['user_index'] > n_users * (1 - self.validation_ratio)) & (
+                    data['item_index'] > n_items * (1 - self.validation_ratio))]
 
-        self.dump(dict(train=train_data, test=test_data))
+        train_data = data.drop(list(validation_data.index) + list(test_data.index))
+        self.dump(dict(train=train_data, validation=validation_data, test=test_data))
+
+
+class MakeTrainPair(gokart.TaskOnKart):
+    task_namespace = 'view_enhanced_bpr'
+
+    positive_sample_weight = luigi.IntParameter(default=5)
+
+    def requires(self):
+        return PreprocessData()
+
+    def run(self):
+        data = self.load()['train']
+
+        clicked_data = data[data['click']].rename(columns={'item_index': 'clicked_item_index'})
+        not_clicked_data = data[~data['click']].rename(columns={'item_index': 'not_clicked_item_index'})
+        not_clicked_data = not_clicked_data.groupby('user_index').apply(lambda x: x.sample(self.positive_sample_weight)).reset_index(drop=True)
+
+        paired_data = pd.merge(clicked_data[['user_index', 'clicked_item_index']],
+                               not_clicked_data[['user_index', 'not_clicked_item_index']],
+                               on='user_index', how='inner')
+        self.dump(paired_data)
