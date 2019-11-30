@@ -28,15 +28,3 @@ class TestModel(gokart.TaskOnKart):
         scores = model(item=item_tensor, user=user_tensor)
         data['model_score'] = scores.data.numpy()
 
-        # TODO: sepalate recall@k
-        # TODO: variable k
-        data['rank'] = data.groupby('user')['model_score'].rank(ascending=False)
-
-        gt_clicks = data.groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'gt_clicks'})
-        gt_clicks = gt_clicks[gt_clicks['gt_clicks'] > 0]
-
-        model_clicks = data[data['rank'] <= 50].groupby('user', as_index=False).agg({'click': 'sum'}).rename(
-            columns={'click': 'model_clicks'})
-        clicks = pd.merge(gt_clicks, model_clicks, on='user', how='left')
-        clicks['recall'] = clicks['model_clicks'] / clicks['gt_clicks']
-        return clicks['recall'].mean()

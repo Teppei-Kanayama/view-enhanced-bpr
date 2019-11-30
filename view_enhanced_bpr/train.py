@@ -62,9 +62,11 @@ class TrainModel(gokart.TaskOnKart):
             optimizer.step()
 
             if (iterations + 1) % 1000 == 0:
-                print(f'train loss: {np.array(training_losses).mean()}, val recall: {validate(model, validation_data)}')
+                validation_score = validate(model, validation_data)
+                print(f'train loss: {np.array(training_losses).mean()}, '
+                      f'val recall@10: {validation_score["recall"]}, '
+                      f'val map@10: {validation_score["map"]}')
 
-            # view bprの場合は10
             if iterations > 1000 * 10:
                 self.dump(model)
                 break
@@ -75,15 +77,34 @@ def validate(model, data):
     item_tensor = Variable(torch.FloatTensor(data['item_index'].values)).long()
     scores = model(item=item_tensor, user=user_tensor)
     data['model_score'] = scores.data.numpy()
+    return dict(recall=recall_at_k(data), map=map_at_k(data))
 
-    # TODO: sepalate recall@k
-    # TODO: variable k
+
+def recall_at_k(data, k=10):
     data['rank'] = data.groupby('user')['model_score'].rank(ascending=False)
-
     gt_clicks = data.groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'gt_clicks'})
     gt_clicks = gt_clicks[gt_clicks['gt_clicks'] > 0]
-
-    model_clicks = data[data['rank'] <= 50].groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'model_clicks'})
+    model_clicks = data[data['rank'] <= k].groupby('user', as_index=False).agg({'click': 'sum'}).rename(
+        columns={'click': 'model_clicks'})
     clicks = pd.merge(gt_clicks, model_clicks, on='user', how='left')
     clicks['recall'] = clicks['model_clicks'] / clicks['gt_clicks']
     return clicks['recall'].mean()
+
+
+def map_at_k(data, k=10):
+    data['rank'] = data.groupby('user')['model_score'].rank(ascending=False)
+
+    gt_clicks = data.groupby('user', as_index=False).agg({'click': 'sum'}).rename(columns={'click': 'gt_clicks'})
+    gt_clicks['k'] = k
+    gt_clicks['min'] = gt_clicks.apply(lambda x: min(x['gt_clicks'], x['k']), axis=1)
+
+    data = data[data['rank'] <= k]
+    data = data[data['click']]
+    data['sum_clicks'] = data.groupby('user')['model_score'].rank(ascending=False)
+    data['precision'] = data['sum_clicks'] / data['rank']
+    precision_at_k = data.groupby('user', as_index=False).agg({'precision': 'sum'})
+
+    df = pd.merge(gt_clicks, precision_at_k, on='user', how='left').fillna(0)
+    df = df[df['min'] > 0]
+    df['score'] = df['precision'] / df['min']
+    return df['score'].mean()

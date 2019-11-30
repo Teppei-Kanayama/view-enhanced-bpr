@@ -31,8 +31,8 @@ class PreprocessData(gokart.TaskOnKart):
     task_namespace = 'view_enhanced_bpr'
 
     click_threshold = luigi.IntParameter(default=4)  # type: int
-    test_ratio = luigi.FloatParameter(default=0.2)  # type: float
-    validation_ratio = luigi.FloatParameter(default=0.1)  # type: float
+    test_ratio = luigi.FloatParameter(default=0.3)  # type: float
+    validation_ratio = luigi.FloatParameter(default=0.3)  # type: float
 
     def requires(self):
         return LoadML100kData()
