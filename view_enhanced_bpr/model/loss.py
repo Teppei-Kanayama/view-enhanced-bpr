@@ -6,4 +6,5 @@ def bpr_loss(x):
 
 
 def view_enhanced_bpr_loss(x, alpha=0.5):
-    return (-LogSigmoid()(x[0] - x[2]) - alpha * LogSigmoid()(x[0] - x[1]) - (1 - alpha) * LogSigmoid()(x[1] - x[2])).mean()
+    # return (-LogSigmoid()(x[0] - x[2]) - alpha * LogSigmoid()(x[0] - x[1]) - (1 - alpha) * LogSigmoid()(x[1] - x[2])).mean()
+    return (-LogSigmoid()(x[0] - x[2])).mean()

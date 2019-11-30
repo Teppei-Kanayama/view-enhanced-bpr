@@ -24,3 +24,16 @@ class MatrixFactorization(nn.Module):
                 clicked_item_indices=Variable(torch.FloatTensor(batch['clicked_item_index'].values)).long(),
                 not_clicked_item_indices=Variable(torch.FloatTensor(batch['not_clicked_item_index'].values)).long()
                 )
+
+    @staticmethod
+    def data_sampler2(data, batch_size=2**11, iterations=1000000):
+        data = data.sample(frac=1).reset_index(drop=True)
+        data = pd.concat([data, data, data])
+        for i in range(0, iterations):
+            batch = data[i * batch_size:i * batch_size + batch_size]
+            yield dict(
+                user_indices=Variable(torch.FloatTensor(batch['user_index'].values)).long(),
+                clicked_item_indices=Variable(torch.FloatTensor(batch['clicked_item_index'].values)).long(),
+                viewed_item_indices=Variable(torch.FloatTensor(batch['viewed_item_index'].values)).long(),
+                not_viewed_item_indices=Variable(torch.FloatTensor(batch['not_viewed_item_index'].values)).long()
+                )

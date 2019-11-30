@@ -78,3 +78,29 @@ class MakeTrainPair(gokart.TaskOnKart):
                                not_clicked_data[['user_index', 'not_clicked_item_index']],
                                on='user_index', how='inner')
         self.dump(paired_data)
+
+
+class MakeTrainTriplet(gokart.TaskOnKart):
+    task_namespace = 'view_enhanced_bpr'
+
+    positive_sample_weight = luigi.IntParameter(default=5)
+
+    def requires(self):
+        return PreprocessData()
+
+    def run(self):
+        data = self.load()['train']
+
+        clicked_data = data[data['click']].rename(columns={'item_index': 'clicked_item_index'})
+        viewed_data = data[data['view']].rename(columns={'item_index': 'viewed_item_index'})
+        not_viewed_data = data[(~data['click']) & (~data['view'])].rename(columns={'item_index': 'not_viewed_item_index'})
+
+        viewed_data = viewed_data.groupby('user_index').apply(lambda x: x.sample(self.positive_sample_weight)).reset_index(drop=True)
+
+        triplet_data = pd.merge(clicked_data[['user_index', 'clicked_item_index']],
+                                viewed_data[['user_index', 'viewed_item_index']],
+                                on='user_index', how='inner')
+        triplet_data = pd.merge(triplet_data,
+                                not_viewed_data[['user_index', 'not_viewed_item_index']],
+                                on='user_index', how='inner')
+        self.dump(triplet_data)
