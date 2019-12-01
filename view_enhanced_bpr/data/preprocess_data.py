@@ -49,7 +49,7 @@ class PreprocessData(gokart.TaskOnKart):
         data = pd.merge(df, data, on=['user', 'item'], how='left').fillna(0.)
 
         data['click'] = data['rating'] >= self.click_threshold
-        data['view'] = data['rating'] == 0
+        data['view'] = (data['rating'] > 0) & (data['rating'] < self.click_threshold)
 
         test_data = data[(data['user_index'] < n_users * self.test_ratio) & (data['item_index'] < n_items * self.test_ratio)]
         validation_data = data[(data['user_index'] > n_users * (1 - self.validation_ratio)) & (
@@ -93,9 +93,9 @@ class MakeTrainTriplet(gokart.TaskOnKart):
 
         clicked_data = data[data['click']].rename(columns={'item_index': 'clicked_item_index'})
         viewed_data = data[data['view']].rename(columns={'item_index': 'viewed_item_index'})
-        not_viewed_data = data[(~data['click']) & (~data['view'])].rename(columns={'item_index': 'not_viewed_item_index'})
 
-        viewed_data = viewed_data.groupby('user_index').apply(lambda x: x.sample(self.positive_sample_weight)).reset_index(drop=True)
+        not_viewed_data = data[(~data['click']) & (~data['view'])].rename(columns={'item_index': 'not_viewed_item_index'})
+        not_viewed_data = not_viewed_data.groupby('user_index').apply(lambda x: x.sample(self.positive_sample_weight)).reset_index(drop=True)
 
         triplet_data = pd.merge(clicked_data[['user_index', 'clicked_item_index']],
                                 viewed_data[['user_index', 'viewed_item_index']],

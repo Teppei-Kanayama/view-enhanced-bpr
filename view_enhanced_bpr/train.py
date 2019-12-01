@@ -70,7 +70,7 @@ class TrainModel(gokart.TaskOnKart):
                       f'val recall@10: {validation_score["recall"]}, '
                       f'val map@10: {validation_score["map"]}')
 
-            if iterations > 1000 * 100:
+            if iterations > 1000 * 10:
                 self.dump(model)
                 break
 
